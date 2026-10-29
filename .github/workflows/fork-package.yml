@@ -25,7 +25,8 @@ jobs:
           node-version: 22.22.2
           registry-url: https://npm.pkg.github.com
       - run: npm ci --ignore-scripts
-      - run: node --test --test-timeout=60000 server/test/*.test.mjs
+      - run: node --test --test-concurrency=4 --test-timeout=60000 server/test/*.test.mjs
+      - run: node --test test/gateway-client*.test.mjs
       - run: npm run build
       - run: npm run fork:check
       - run: npm pack --ignore-scripts --json > pack-manifest.json

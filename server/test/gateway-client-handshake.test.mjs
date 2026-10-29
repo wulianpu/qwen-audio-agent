@@ -156,7 +156,13 @@ test('host tool sources use negotiated actions, scoped assets and disconnect can
     },
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-  t.after(async () => { await gateway.close(); await new Promise(resolve => server.close(resolve)) })
+  const sockets = new Set()
+  server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)) })
+  t.after(async () => {
+    for (const socket of sockets) socket.destroy()
+    await gateway.close()
+    await new Promise(resolve => server.close(resolve))
+  })
   const client = await connect(server, createGatewaySessionHello({
     capabilities: ['input.text', 'client.actions.example.capture'],
     connection: { text_only: true },

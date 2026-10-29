@@ -251,7 +251,7 @@ export function createRealtimeSessionRuntime({
       taskCoordinator.announcePendingInputs()
     },
     onReady: createdFrontend => {
-      const recovery = createdFrontend.provider.buildReadyRecovery?.({
+      const recovery = createdFrontend.provider?.buildReadyRecovery?.({
         agentContext: getAgentContext(),
         providerGeneration: createdFrontend.providerGeneration,
       })
@@ -287,7 +287,7 @@ export function createRealtimeSessionRuntime({
       }
     },
     onDisconnected: disconnectedFrontend => {
-      disconnectedFrontend?.provider.invalidateReadyProof?.({
+      disconnectedFrontend?.provider?.invalidateReadyProof?.({
         agentContext: getAgentContext(),
         providerGeneration: disconnectedFrontend.providerGeneration,
       })
