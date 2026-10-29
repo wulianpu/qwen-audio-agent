@@ -160,6 +160,16 @@ export class RealtimeProviderSession {
     }
   }
 
+  commitAudio() {
+    if (this.blockedError || !this.ready) return false
+    return this.frontend.commitAudio?.() ?? false
+  }
+
+  observePlaybackReceipt(type, responseId, reason = '') {
+    if (this.blockedError || !this.ready) return false
+    return this.frontend.observePlaybackReceipt?.(type, responseId, reason) ?? false
+  }
+
   appendImage(image) {
     if (this.blockedError) return false
     if (this.ready) return this.frontend.appendImage(image)
@@ -300,7 +310,7 @@ export class RealtimeProviderSession {
       blocked: Boolean(this.blockedError),
     })
     this.frontend = null
-    this.onDisconnected()
+    this.onDisconnected(createdFrontend)
     if (!this.shouldReconnect()) return
     this.onConnectionState({
       state: 'unavailable',
@@ -361,7 +371,7 @@ export class RealtimeProviderSession {
     const staleFrontend = this.frontend
     this.frontend = null
     this.connectPromise = null
-    if (staleFrontend && notifyDisconnected) this.onDisconnected()
+    if (staleFrontend && notifyDisconnected) this.onDisconnected(staleFrontend)
     staleFrontend?.close()
   }
 

@@ -14,6 +14,7 @@ jobs:
   package:
     if: github.repository == 'wulianpu/qwen-audio-agent'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -24,7 +25,7 @@ jobs:
           node-version: 22.22.2
           registry-url: https://npm.pkg.github.com
       - run: npm ci --ignore-scripts
-      - run: node --test server/test/fork-contracts.test.mjs server/test/client-event-router.test.mjs server/test/session-journal*.test.mjs server/test/task-journal-recovery.test.mjs server/test/conversation-sync.test.mjs server/test/gateway-client-replay-buffer.test.mjs
+      - run: node --test --test-timeout=60000 server/test/*.test.mjs
       - run: npm run build
       - run: npm run fork:check
       - run: npm pack --ignore-scripts --json > pack-manifest.json
@@ -38,3 +39,4 @@ jobs:
         run: npm publish *.tgz --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

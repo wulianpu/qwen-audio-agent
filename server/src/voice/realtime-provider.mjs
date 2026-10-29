@@ -107,6 +107,7 @@ const DEFAULT_CAPABILITIES = Object.freeze({
   imageRequiresAudioStart: false,
 })
 const DEFAULT_RESPONSE_CANCEL_GRACE_MS = 1_000
+let realtimeFrontendGeneration = 0
 
 export class RealtimeFrontend {
   constructor({
@@ -125,6 +126,7 @@ export class RealtimeFrontend {
   } = {}) {
     this.provider = validateRealtimeProvider(provider)
     this.connectionId = randomUUID()
+    this.providerGeneration = ++realtimeFrontendGeneration
     this.protocol = validateRealtimeProtocol(
       provider.createProtocol?.({
         connectionId: this.connectionId,
@@ -376,6 +378,18 @@ export class RealtimeFrontend {
   appendAudio(audio) {
     this.send(this.protocol.audioAppend(audio), { audio: true })
     this.audioInputStarted = true
+  }
+
+  commitAudio() {
+    if (!this.ready || !this.audioInputStarted || typeof this.protocol.audioCommit !== 'function') return false
+    this.send(this.protocol.audioCommit())
+    return true
+  }
+
+  observePlaybackReceipt(type, responseId, reason = '') {
+    if (!this.ready || typeof this.protocol.playbackReceipt !== 'function') return false
+    this.send(this.protocol.playbackReceipt(type, responseId, reason))
+    return true
   }
 
   appendImage(image) {
@@ -637,12 +651,13 @@ export class RealtimeFrontend {
       throw new TypeError(`unsupported AgentDelivery route: ${route}`)
     }
     if (route === 'interrupt') this.cancel()
-    const injection = this.provider.buildResultInjection(content, { allowTools })
+    const injection = this.provider.buildResultInjection(content, { allowTools, origin, correlation: context })
     const generation = this.responseQueueGeneration
     if (instructions && injection?.response) {
       injection.response.instructions = String(instructions)
     }
     let contextInjected = false
+    const providerGeneration = this.providerGeneration
     if (contextTiming === 'immediate' && injectContext) {
       await this.createConversationItem(injection.item)
       contextInjected = true
@@ -657,11 +672,12 @@ export class RealtimeFrontend {
       return {
         completed: true,
         contextInjected,
+        providerGeneration,
         route,
       }
     }
     if (generation !== this.responseQueueGeneration) {
-      return { cancelled: true, contextInjected, route }
+      return { cancelled: true, contextInjected, providerGeneration, route }
     }
     const outcome = await this.enqueueResponse(origin, context, async pending => {
       pending.isCurrent = shouldRespond
@@ -674,6 +690,7 @@ export class RealtimeFrontend {
     })
     return {
       ...(outcome || {}),
+      providerGeneration,
       contextInjected,
       route,
     }

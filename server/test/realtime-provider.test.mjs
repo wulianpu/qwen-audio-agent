@@ -1681,6 +1681,7 @@ test('injects a completed work result into Qwen conversation with tools disabled
   assert.deepEqual(await outcome, {
     completed: true,
     responseId: 'response-result',
+    providerGeneration: frontend.providerGeneration,
     contextInjected: true,
   })
 })
@@ -1706,6 +1707,7 @@ test('injects AgentDelivery context without creating a realtime response', async
   assert.deepEqual(await outcome, {
     completed: true,
     contextInjected: true,
+    providerGeneration: frontend.providerGeneration,
     route: 'context',
   })
   assert.deepEqual(sent.map(event => event.type), ['conversation.item.create'])
@@ -1729,7 +1731,7 @@ test('immediate silent context reaches an active session before the next turn cl
   assert.match(sent[0].item.content[0].text, /避开拥堵/)
   frontend.handleLifecycle({ type: 'conversation.item.created', item: sent[0].item })
   assert.deepEqual(await outcome, {
-    completed: true, contextInjected: true, route: 'context',
+    completed: true, contextInjected: true, providerGeneration: frontend.providerGeneration, route: 'context',
   })
 
   // Starting a new user turn discards old queued responses, not the context

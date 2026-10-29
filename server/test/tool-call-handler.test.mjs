@@ -3197,3 +3197,14 @@ test('notes: unavailable without a notes store', async () => {
   })
   assert.equal(kit.outputs.at(-1)[1].error_code, 'notes_unavailable')
 })
+
+test('external tools receive stable tool-call and response correlation', async () => {
+  let received
+  const source = responseToolSource(['example_lookup'], async (_name, _args, context) => { received = context; return { status: 'ok' } })
+  const kit = harness({ frontendToolSources: [source] })
+  await responseToolCall(kit.handler, 'correlated-call', 'example_lookup', 'correlated-response', {})
+  assert.equal(received.toolCallId, 'correlated-call')
+  assert.equal(received.responseId, 'correlated-response')
+  assert.equal(received.turnId, 'turn-one')
+  assert.equal(received.isCurrent(), true)
+})

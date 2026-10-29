@@ -111,6 +111,7 @@ export class ClientEventDefinitionRegistry {
       handle: typeof definition.handle === 'function' ? definition.handle : null,
       receipt: typeof definition.receipt === 'function' ? definition.receipt : null,
       project: typeof definition.project === 'function' ? definition.project : null,
+      confirm: typeof definition.confirm === 'function' ? definition.confirm : null,
     })
     this.definitions.set(name, normalized)
     return normalized
@@ -236,6 +237,7 @@ export class GatewayEventRouter {
       event,
       delivery,
       ...structuredClone(result),
+      ...(definition.confirm ? { confirm: outcome => definition.confirm(event, outcome) } : {}),
     }
   }
 

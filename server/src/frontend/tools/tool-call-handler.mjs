@@ -192,6 +192,8 @@ export class ToolCallHandler {
       output = await source.execute(tool.name, args, {
         ...this.externalToolContext,
         turnId: context.turnId,
+        responseId: String(context.callContext?.responseId || context.event?.response_id || ''),
+        toolCallId: context.callId,
         isCurrent: () => !this.isStale(context.turnId, context.turnGeneration),
       })
     } catch {

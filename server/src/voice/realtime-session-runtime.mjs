@@ -167,6 +167,7 @@ export function createRealtimeSessionRuntime({
     conversationSync.frontendContext({ ownerId, sessionId }),
   )
   const getAgentContext = () => ({
+    realtimeSessionIdentity: { ownerId, sessionId },
     client: clientContext,
     frontend: {
       ...(spawnThinkingDescription ? { spawnThinkingDescription } : {}),
@@ -250,6 +251,19 @@ export function createRealtimeSessionRuntime({
       taskCoordinator.announcePendingInputs()
     },
     onReady: createdFrontend => {
+      const recovery = createdFrontend.provider.buildReadyRecovery?.({
+        agentContext: getAgentContext(),
+        providerGeneration: createdFrontend.providerGeneration,
+      })
+      if (recovery?.delivery) {
+        agentDeliveries.deliver(recovery.delivery).then(outcome => {
+          recovery.confirm?.(outcome)
+        }).catch(error => {
+          connectionLogger.warn('realtime.provider_ready_recovery_failed', {
+            error: error?.message || String(error),
+          })
+        })
+      }
       const resumedFromSleep = waking
       waking = false
       if (outputEnabled) taskCoordinator.claimPendingNotifications()
@@ -272,7 +286,11 @@ export function createRealtimeSessionRuntime({
         announcements.flush()
       }
     },
-    onDisconnected: () => {
+    onDisconnected: disconnectedFrontend => {
+      disconnectedFrontend?.provider.invalidateReadyProof?.({
+        agentContext: getAgentContext(),
+        providerGeneration: disconnectedFrontend.providerGeneration,
+      })
       taskCoordinator.resetPresentation()
       clearVisualInput()
       clearResponseCandidate()
@@ -874,6 +892,7 @@ export function createRealtimeSessionRuntime({
     if (closed) return
     if (!result.duplicate && result.delivery) {
       agentDeliveries.deliver(result.delivery).then(outcome => {
+        result.confirm?.(outcome)
         if (outcome?.completed || outcome?.handled) return
         connectionLogger.warn('client_event.delivery_skipped', {
           name: result.name,
@@ -1057,6 +1076,9 @@ export function createRealtimeSessionRuntime({
         audio: event.audio,
         sampleRate: Number(realtimeSession.provider()?.inputSampleRate) || 16_000,
       })
+    } else if (event.type === GatewayClientEvent.AUDIO_COMMIT) {
+      if (sleeping || !inputEnabled || inputSuspended || !voiceAccess.isActive()) return
+      realtimeSession.commitAudio()
     } else if (event.type === GatewayClientEvent.IMAGE_APPEND) {
       if (
         sleeping
@@ -1101,6 +1123,7 @@ export function createRealtimeSessionRuntime({
       emit({ type: GatewayServerEvent.PLAYBACK_CLEAR, reason: 'user_interruption' })
     } else if (event.type === GatewayClientEvent.PLAYBACK_STARTED) {
       const id = String(event.responseId || '')
+      realtimeSession.observePlaybackReceipt(event.type, id)
       const playbackContext = presentationRuntime.get(id)
       if (acceptsPlaybackReceipt({
         outputEnabled,
@@ -1116,6 +1139,7 @@ export function createRealtimeSessionRuntime({
       }
     } else if (event.type === GatewayClientEvent.PLAYBACK_ENDED) {
       const id = String(event.responseId || '')
+      realtimeSession.observePlaybackReceipt(event.type, id)
       const accepted = acceptsPlaybackReceipt({
         outputEnabled,
         active: voiceAccess.isActive(),
@@ -1125,6 +1149,8 @@ export function createRealtimeSessionRuntime({
       if (accepted) presentationRuntime.finishPlayback(id)
     } else if (event.type === GatewayClientEvent.PLAYBACK_CANCELLED) {
       const id = String(event.responseId || '')
+      realtimeSession.observePlaybackReceipt(
+        event.type, id, String(event.reason || ''))
       const accepted = acceptsPlaybackReceipt({
         outputEnabled,
         active: voiceAccess.isActive(),

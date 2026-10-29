@@ -56,6 +56,7 @@ export class ClientActionPort {
     this.createEventId = createEventId
     this.pendingById = new Map()
     this.pendingByKey = new Map()
+    this.retiredById = new Map()
   }
 
   supports(name) {
@@ -70,8 +71,12 @@ export class ClientActionPort {
     idempotencyKey = '',
     timeoutMs = this.timeoutMs,
     signal,
+    onLateResult = null,
   } = {}) {
-    if (signal?.aborted) return Promise.reject(signal.reason || new Error('Client Action cancelled'))
+    if (signal?.aborted) return Promise.reject(actionError(
+      'client_action_cancelled', 'Client Action cancelled before dispatch',
+      { notStarted: true },
+    ))
     const actionName = String(name || '').trim()
     const capability = this.capabilityForAction(actionName)
     if (!capability || !this.supports(actionName)) {
@@ -101,8 +106,10 @@ export class ClientActionPort {
       signal,
       onAbort: null,
       promise: deferred.promise,
+      onLateResult: typeof onLateResult === 'function' ? onLateResult : null,
     }
     pending.timer = setTimeout(() => {
+      this.#retire(pending)
       this.#settle(pending, null, actionError(
         'client_action_timeout',
         `Client Action timed out: ${actionName}`,
@@ -111,8 +118,11 @@ export class ClientActionPort {
     pending.timer.unref?.()
     this.pendingById.set(requestId, pending)
     if (key) this.pendingByKey.set(key, pending)
-    pending.onAbort = () => this.#settle(pending, null,
-      signal.reason || actionError('client_action_cancelled', 'Client Action cancelled'))
+    pending.onAbort = () => {
+      this.#retire(pending)
+      this.#settle(pending, null,
+        signal.reason || actionError('client_action_cancelled', 'Client Action cancelled'))
+    }
     signal?.addEventListener('abort', pending.onAbort, { once: true })
     try {
       this.send({
@@ -130,7 +140,13 @@ export class ClientActionPort {
   receive(value) {
     const result = GatewayClientActionResultSchema.parse(value)
     const pending = this.pendingById.get(result.request_event_id)
-    if (!pending) return false
+    if (!pending) {
+      const late = this.retiredById.get(result.request_event_id)
+      if (!late) return false
+      this.retiredById.delete(result.request_event_id)
+      try { Promise.resolve(late(result)).catch(() => {}) } catch { /* observers cannot break the transport */ }
+      return true
+    }
     if (result.status === 'completed') {
       this.#settle(pending, result)
       return true
@@ -147,6 +163,15 @@ export class ClientActionPort {
     const error = actionError('client_action_disconnected', reason)
     for (const pending of [...this.pendingById.values()]) {
       this.#settle(pending, null, error)
+    }
+    this.retiredById.clear()
+  }
+
+  #retire(pending) {
+    if (!pending.onLateResult) return
+    this.retiredById.set(pending.requestId, pending.onLateResult)
+    while (this.retiredById.size > 128) {
+      this.retiredById.delete(this.retiredById.keys().next().value)
     }
   }
 

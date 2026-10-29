@@ -745,3 +745,30 @@ test('input state separates client mute, host suspension and deactivation', asyn
   h.runtime.close()
   assert.equal(h.runtime.inputState().inputActive, false)
 })
+
+test('session identity and recovery invalidation retain the disconnected generation', async t => {
+  const h = harness(t, { ownerId: 'visitor-owner', sessionId: 'visitor-session' })
+  const invalidated = []
+  h.provider.invalidateReadyProof = context => invalidated.push(context)
+  const frontend = await h.connect()
+  assert.deepEqual(frontend.initialContext.realtimeSessionIdentity, { ownerId: 'visitor-owner', sessionId: 'visitor-session' })
+  frontend.providerGeneration = 47
+  frontend.disconnect()
+  assert.equal(invalidated[0].providerGeneration, 47)
+  assert.deepEqual(invalidated[0].agentContext.realtimeSessionIdentity, { ownerId: 'visitor-owner', sessionId: 'visitor-session' })
+})
+
+test('ready recovery invokes provider hook and confirms the delivered context', async t => {
+  const { createAgentDelivery } = await import('../src/delivery/agent-delivery.mjs')
+  const h = harness(t)
+  let requested, confirmed
+  h.provider.buildReadyRecovery = context => {
+    requested = context
+    return { delivery: createAgentDelivery({ id: 'recovery-context', origin: 'client-event', mode: 'context', text: 'restore trusted context' }), confirm: outcome => { confirmed = outcome } }
+  }
+  const frontend = await h.connect()
+  await until(() => confirmed)
+  assert.deepEqual(requested.agentContext.realtimeSessionIdentity, { ownerId: h.ownerId, sessionId: h.sessionId })
+  assert.equal(confirmed.contextInjected, true)
+  assert.equal(frontend.deliveries[0].text, 'restore trusted context')
+})

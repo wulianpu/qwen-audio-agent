@@ -5,6 +5,7 @@ export const GatewayClientEvent = Object.freeze({
   INPUT_UNMUTE: 'input.unmute',
   INPUT_MUTE: 'input.mute',
   AUDIO_APPEND: 'audio.append',
+  AUDIO_COMMIT: 'audio.commit',
   IMAGE_APPEND: 'image.append',
   IMAGE_CLEAR: 'image.clear',
   TEXT_MESSAGE: 'text.message',
