@@ -125,6 +125,28 @@ export class SessionJournal {
     return operation
   }
 
+  retire(retainedEvents = []) {
+    if (!Array.isArray(retainedEvents)) throw new TypeError('retainedEvents must be an array')
+    this.pendingWrites += 1
+    const operation = this.writeQueue.then(async () => {
+      await this.open()
+      const retained = retainedEvents.map(event => ({ ...event }))
+      const previousCount = this.events.length
+      const header = {
+        ...this.header,
+        privacy: {
+          state: 'retired',
+          retiredAt: this.header.privacy?.retiredAt || this.now(),
+        },
+      }
+      await this.replaceFile(header, retained)
+      this.install(header, retained)
+      return { purgedEvents: Math.max(0, previousCount - retained.length), retainedEvents: retained.length }
+    }).finally(() => { this.pendingWrites -= 1 })
+    this.writeQueue = operation.catch(() => {})
+    return operation
+  }
+
   async flush() { await this.writeQueue }
   list() { return [this.header, ...this.events].map(item => ({ ...item })) }
   eventsSince(seq = 0) { return this.events.filter(event => event.seq > seq).map(event => ({ ...event })) }

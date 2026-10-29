@@ -109,6 +109,7 @@ export class ClientEventDefinitionRegistry {
         ? definition.coalesceKey
         : null,
       handle: typeof definition.handle === 'function' ? definition.handle : null,
+      receipt: typeof definition.receipt === 'function' ? definition.receipt : null,
       project: typeof definition.project === 'function' ? definition.project : null,
     })
     this.definitions.set(name, normalized)
@@ -136,6 +137,7 @@ export class GatewayEventRouter {
     this.duplicateTtlMs = duplicateTtlMs
     this.maxDuplicateIds = maxDuplicateIds
     this.seen = new Map()
+    this.pending = new Map()
     this.rateBuckets = new Map()
     this.latest = new Map()
   }
@@ -143,7 +145,19 @@ export class GatewayEventRouter {
   // effects are supplied by the Gateway host, never decoded from Client data.
   // They let a registered deterministic handler request a narrow local state
   // transition without exposing Gateway internals or upgrading event authority.
-  async publish(message, { source = {}, effects = {} } = {}) {
+  async publish(message, options = {}) {
+    const key = JSON.stringify([sourceKey(options.source), message?.event_id])
+    const pending = this.pending.get(key)
+    if (pending) {
+      const result = await pending
+      return { accepted: true, duplicate: true, ...(result.name ? { name: result.name } : {}), ...(result.receipt ? { receipt: structuredClone(result.receipt) } : {}) }
+    }
+    const operation = this.publishOnce(message, options)
+    this.pending.set(key, operation)
+    try { return await operation } finally { this.pending.delete(key) }
+  }
+
+  async publishOnce(message, { source = {}, effects = {} } = {}) {
     const validated = GatewayClientEventPublishSchema.safeParse({ type: 'client.event.publish', ...message })
     if (!validated.success) {
       throw new ClientEventRoutingError('client_event_invalid', 'Invalid Client Event envelope')
@@ -169,7 +183,7 @@ export class GatewayEventRouter {
     this.#pruneSeen(now)
     const duplicateKey = `${sourceKey(source)}:${messageId}`
     if (this.seen.has(duplicateKey)) {
-      return { accepted: true, duplicate: true, ...(message.name ? { name: message.name } : {}) }
+      return { accepted: true, duplicate: true, ...(message.name ? { name: message.name } : {}), ...structuredClone(this.seen.get(duplicateKey).result) }
     }
 
     const payload = textEvent ? message.text : message.data ?? {}
@@ -206,7 +220,9 @@ export class GatewayEventRouter {
     })
     await definition.handle?.(event, effects)
     const delivery = definition.project?.(event) || null
-    this.seen.set(duplicateKey, now)
+    const receipt = await definition.receipt?.(event)
+    const result = receipt == null ? {} : { receipt: JSON.parse(JSON.stringify(receipt)) }
+    this.seen.set(duplicateKey, { timestamp: now, result })
     this.#boundSeen()
 
     if (definition.retention === 'latest') {
@@ -219,6 +235,7 @@ export class GatewayEventRouter {
       ...(message.name ? { name: message.name } : {}),
       event,
       delivery,
+      ...structuredClone(result),
     }
   }
 
@@ -243,7 +260,7 @@ export class GatewayEventRouter {
   }
 
   #pruneSeen(now) {
-    for (const [key, timestamp] of this.seen) {
+    for (const [key, { timestamp }] of this.seen) {
       if (now - timestamp <= this.duplicateTtlMs) continue
       this.seen.delete(key)
     }

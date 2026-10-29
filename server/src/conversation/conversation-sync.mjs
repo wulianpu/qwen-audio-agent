@@ -244,6 +244,11 @@ export class ConversationSync {
     }
   }
 
+  retireSession(ownerId, sessionId) {
+    this.prune()
+    return this.sessions.delete(sessionKey(String(ownerId || ''), String(sessionId || 'main')))
+  }
+
   discardRecorded(ownerId) {
     this.prune()
     for (const state of this.sessions.values()) {

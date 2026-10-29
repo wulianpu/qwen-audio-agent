@@ -347,6 +347,7 @@ export function attachGatewayClientTransport(server, {
           accepted: result.accepted === true,
           name: result.name,
           ...(result.duplicate ? { duplicate: true } : {}),
+          ...(result.receipt ? { result: result.receipt } : {}),
         })
         sessionRuntime.handleClientDelivery(result)
         return
@@ -504,6 +505,13 @@ export function attachGatewayClientTransport(server, {
         connection.close(1011, 'session initialization failed')
         throw error
       }
+    },
+    retireSession(ownerId, sessionId) {
+      const key = `${String(ownerId || '')}\u0000${String(sessionId || 'main')}`
+      const replay = replayBuffers.get(key)
+      const removed = replay?.clear?.() || 0
+      replayBuffers.delete(key)
+      return removed
     },
     disconnectCredential(credentialId) {
       const target = String(credentialId || '').trim()

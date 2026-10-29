@@ -29,6 +29,7 @@ concurrency:
 
 jobs:
   plan:
+    if: github.repository == 'QwenAudio/qwen-audio-agent'
     runs-on: ubuntu-latest
     outputs:
       release: ${{ steps.plan.outputs.release }}

@@ -244,6 +244,7 @@ export const GatewayClientEventPublishResultSchema = GatewayServerEnvelopeSchema
   accepted: z.boolean(),
   name: EventNameSchema.optional(),
   duplicate: z.boolean().optional(),
+  result: z.record(z.string(), z.unknown()).optional(),
 })
 
 export const GatewaySessionOutputVoiceUpdateSchema = GatewayClientEnvelopeSchema.extend({

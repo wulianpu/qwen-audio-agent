@@ -23,6 +23,12 @@ export class GatewayClientReplayBuffer {
     return recorded
   }
 
+  clear() {
+    const removed = this.events.length
+    this.events = []
+    return removed
+  }
+
   cursor() {
     return {
       earliestSequence: this.events[0]?.sequence || this.sequence,

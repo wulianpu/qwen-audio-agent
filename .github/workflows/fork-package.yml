@@ -1,0 +1,40 @@
+name: Fork package
+on:
+  push:
+    branches: [feature/production-fork-contracts]
+  workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        description: Publish verified package to GitHub Packages
+permissions:
+  contents: read
+jobs:
+  package:
+    if: github.repository == 'wulianpu/qwen-audio-agent'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          registry-url: https://npm.pkg.github.com
+      - run: npm ci --ignore-scripts
+      - run: node --test server/test/fork-contracts.test.mjs server/test/client-event-router.test.mjs server/test/session-journal*.test.mjs server/test/task-journal-recovery.test.mjs server/test/conversation-sync.test.mjs server/test/gateway-client-replay-buffer.test.mjs
+      - run: npm run build
+      - run: npm run fork:check
+      - run: npm pack --ignore-scripts --json > pack-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fork-package
+          path: |
+            *.tgz
+            pack-manifest.json
+      - if: github.event_name == 'workflow_dispatch' && inputs.publish
+        run: npm publish *.tgz --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

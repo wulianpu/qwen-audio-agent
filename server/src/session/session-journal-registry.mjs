@@ -88,7 +88,14 @@ export class SessionJournalRegistry {
     try { bytes = recordBytes(event) } catch (error) { return Promise.reject(error) }
     return this.enqueue(async () => {
       const journal = this.get(ownerId, sessionId)
+      await journal.open()
+      const retired = journal.header?.privacy?.state === 'retired'
+      if (retired && event?.type !== 'qwaudio/task/event') return null
       const result = await journal.append(event)
+      if (retired) {
+        const retained = latestJournalTasks(journal.events).filter(needsJournalRecovery)
+        await journal.retire(retained)
+      }
       if (this.now() - this.lastMaintenance >= this.maintenanceIntervalMs) {
         await this.prune(journal.filePath)
       }
@@ -101,6 +108,21 @@ export class SessionJournalRegistry {
         error,
       })
       return null
+    })
+  }
+
+  retireSession(ownerId, sessionId = 'main') {
+    return this.enqueue(async () => {
+      const journal = this.get(ownerId, sessionId)
+      await journal.open()
+      await journal.flush()
+      const retained = latestJournalTasks(journal.events).filter(needsJournalRecovery)
+      const result = await journal.retire(retained)
+      return {
+        retired: true,
+        retainedTasks: retained.length,
+        purgedEvents: result.purgedEvents,
+      }
     })
   }
 
